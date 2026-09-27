@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Change this to your own login email(s) — must match exactly.
+    function isAdmin() {
+      return request.auth != null &&
+             request.auth.token.email in ['youremail@example.com'];
+    }
+
+    function isApproved(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.status == 'approved';
+    }
+
+    match /users/{userId} {
+      // A user (or the admin) can read their own profile doc.
+      allow get: if request.auth != null && (request.auth.uid == userId || isAdmin());
+
+      // Only the admin can list all users (needed for the Admin tab).
+      allow list: if isAdmin();
+
+      // A new sign-up can create their own profile doc, always starting as 'pending'.
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.status == 'pending';
+
+      // Only the admin can change a profile (e.g. approve/reject/revoke).
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+
+      // A user's own salary entries — only once their account is approved.
+      match /income/{entryId} {
+        allow read, write: if request.auth != null
+                            && request.auth.uid == userId
+                            && isApproved(userId);
+      }
+
+      // A user's own expense entries — only once their account is approved.
+      match /expenses/{entryId} {
+        allow read, write: if request.auth != null
+                            && request.auth.uid == userId
+                            && isApproved(userId);
+      }
+    }
+  }
+}
