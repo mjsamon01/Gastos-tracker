@@ -2,8 +2,7 @@
 // Network-first for the app shell; falls back to cache when offline.
 // Firebase/API requests (cross-origin) are never touched.
 const CACHE = 'bahagi-shell-v1';
-const SHELL = ['./', 'index.html', 'icon-192.png', 'icon-512.png'];
-
+const SHELL = ['./', 'index.html', 'icon-192-1.png', 'icon-512-1.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
