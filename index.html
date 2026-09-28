@@ -314,7 +314,7 @@
 
         <div class="sheet">
           <h2 class="sheet-title serif">How the split works</h2>
-          <div class="sheet-sub">Offering (10%) and savings (20%) are each calculated straight from <strong>net profit</strong> — your salary minus your expenses — not from each other.</div>
+          <div class="sheet-sub">Offering is 10% of your <strong>gross salary</strong>. Savings is 20% of your <strong>net profit</strong> (salary minus expenses).</div>
           <div id="breakdownList"></div>
         </div>
 
@@ -584,9 +584,9 @@ function totals(){
   const totalExpenses = data.expenses.reduce((s,e)=> s + e.amount, 0);
   const netProfit = totalIncome - totalExpenses;
 
-  const offering = netProfit > 0 ? netProfit * 0.10 : 0;
+  const offering = totalIncome > 0 ? totalIncome * 0.10 : 0;
   const savings = netProfit > 0 ? netProfit * 0.20 : 0;
-  const finalBalance = netProfit > 0 ? netProfit - offering - savings : netProfit;
+  const finalBalance = netProfit - offering - savings;
 
   return { totalIncome, totalExpenses, netProfit, offering, savings, finalBalance };
 }
@@ -678,7 +678,7 @@ function render(){
 
   document.getElementById('breakdownList').innerHTML = `
     <div class="breakdown-row"><span>Net profit (salary − expenses)</span><span class="v">${peso(t.netProfit)}</span></div>
-    <div class="breakdown-row"><span>Offering — 10% of net profit</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
+    <div class="breakdown-row"><span>Offering — 10% of gross salary</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
     <div class="breakdown-row"><span>Savings — 20% of net profit</span><span class="v" style="color:var(--savings)">${peso(t.savings)}</span></div>
     <div class="breakdown-row"><span>Final balance</span><span class="v">${peso(t.finalBalance)}</span></div>
   `;
