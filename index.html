@@ -468,12 +468,6 @@ const firebaseConfig = {
 
 const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
 
-/* =======================================================================
-   2) List the email(s) that should see the Admin tab and be able to
-      approve/reject sign-ups. Must match exactly what they sign in with.
-   ======================================================================= */
-const ADMIN_EMAILS = ["youremail@example.com"];
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
