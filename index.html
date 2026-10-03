@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bahagi — Salary & Budget Ledger</title>
-  <link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#16352A">
-<link rel="icon" type="image/png" sizes="192x192" href="icon-192-1.png">
-<link rel="apple-touch-icon" href="apple-touch-icon-1.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Bahagi">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -63,10 +63,14 @@
 
   /* ===== Shared form styles ===== */
   label{ display:block; font-size:12.5px; color: var(--ink-soft); margin-bottom:5px; }
-  input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
+  input[type=text], input[type=number], input[type=date], input[type=email], input[type=password], select{
     width:100%; background: #fff; border: 1px solid var(--paper-line); border-radius: 2px;
     padding: 10px 11px; font-family:'IBM Plex Mono',monospace; font-size: 14.5px; color: var(--ink);
   }
+  select{ font-family:'Karla',sans-serif; }
+  .category-pill{ font-size:10px; padding:1px 7px; border-radius:20px; font-weight:600; margin-left:6px; }
+  .category-pill.gas{ background:rgba(52,80,107,0.12); color:var(--gastos); }
+  .category-pill.maintenance{ background:rgba(173,138,78,0.18); color:var(--gold); }
   input:focus{ outline:2px solid var(--gold); outline-offset:1px; }
   .field{ margin-bottom: 12px; }
   .row{ display:flex; gap:10px; }
@@ -320,7 +324,7 @@
 
         <div class="sheet">
           <h2 class="sheet-title serif">How the split works</h2>
-          <div class="sheet-sub">Offering is 10% of your <strong>gross salary</strong>. Savings is 20% of your <strong>net profit</strong> (salary minus expenses).</div>
+          <div class="sheet-sub">Offering is 10% of your salary <strong>after Gas &amp; Maintenance expenses are deducted</strong> (like a statutory deduction). Savings is 20% of your <strong>net profit</strong> (salary minus all expenses).</div>
           <div id="breakdownList"></div>
         </div>
 
@@ -370,10 +374,21 @@
               <input type="date" id="expDate">
             </div>
           </div>
-          <div class="field">
-            <label for="expAmount">Amount (₱)</label>
-            <input type="number" id="expAmount" placeholder="0.00" min="0" step="0.01">
+          <div class="row">
+            <div class="field">
+              <label for="expAmount">Amount (₱)</label>
+              <input type="number" id="expAmount" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="field">
+              <label for="expCategory">Category</label>
+              <select id="expCategory">
+                <option value="general">General</option>
+                <option value="gas">Gas</option>
+                <option value="maintenance">Maintenance</option>
+              </select>
+            </div>
           </div>
+          <div class="sheet-sub" style="margin-top:-6px; margin-bottom:14px;">Gas and Maintenance are deducted first, like statutory deductions — offering is based on what's left after those two.</div>
           <button class="action btn-primary" id="addExpenseBtn">Add expense entry</button>
         </div>
       </section>
@@ -382,7 +397,26 @@
         <div class="sheet">
           <h2 class="sheet-title serif">Full ledger</h2>
           <div class="sheet-sub">Every salary and expense entry, most recent first. Edit or delete anytime.</div>
-          <div id="ledgerList"></div>
+
+          <div class="row" style="align-items:flex-end; margin-bottom:10px;">
+            <div class="field" style="margin-bottom:0;">
+              <label for="filterPeriod">Filter</label>
+              <select id="filterPeriod">
+                <option value="all">All time</option>
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+              </select>
+            </div>
+            <div class="field" id="filterDateWrap" style="margin-bottom:0; display:none;">
+              <label for="filterDate">Date</label>
+              <input type="date" id="filterDate">
+            </div>
+          </div>
+          <div class="breakdown-row"><span>Salary in range</span><span class="v" id="filterIncomeTotal">₱0</span></div>
+          <div class="breakdown-row"><span>Expenses in range</span><span class="v" id="filterExpenseTotal">₱0</span></div>
+
+          <div id="ledgerList" style="margin-top:10px;"></div>
         </div>
       </section>
 
@@ -424,15 +458,19 @@ import {
       Security is enforced by the Firestore rules you publish separately.
    ======================================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyDbJnSVsUrmwNWndbNfartk2oOtqbGLx1k",
-  authDomain: "gastos-tracker-bf70d.firebaseapp.com",
-  projectId: "gastos-tracker-bf70d",
-  storageBucket: "gastos-tracker-bf70d.firebasestorage.app",
-  messagingSenderId: "415056811668",
-  appId: "1:415056811668:web:5331b1ead8d2991dc70681"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
-const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
+/* =======================================================================
+   2) List the email(s) that should see the Admin tab and be able to
+      approve/reject sign-ups. Must match exactly what they sign in with.
+   ======================================================================= */
+const ADMIN_EMAILS = ["youremail@example.com"];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -588,13 +626,17 @@ function attachDataListeners(uid){
 function totals(){
   const totalIncome = data.income.reduce((s,e)=> s + e.amount, 0);
   const totalExpenses = data.expenses.reduce((s,e)=> s + e.amount, 0);
+  const preOfferingDeductions = data.expenses
+    .filter(e => e.category === 'gas' || e.category === 'maintenance')
+    .reduce((s,e)=> s + e.amount, 0);
   const netProfit = totalIncome - totalExpenses;
 
-  const offering = totalIncome > 0 ? totalIncome * 0.10 : 0;
+  const offeringBase = totalIncome - preOfferingDeductions;
+  const offering = offeringBase > 0 ? offeringBase * 0.10 : 0;
   const savings = netProfit > 0 ? netProfit * 0.20 : 0;
   const finalBalance = netProfit - offering - savings;
 
-  return { totalIncome, totalExpenses, netProfit, offering, savings, finalBalance };
+  return { totalIncome, totalExpenses, preOfferingDeductions, netProfit, offeringBase, offering, savings, finalBalance };
 }
 
 function mergedEntries(){
@@ -618,9 +660,11 @@ function entryViewHtml(e){
       <div class="amt">+${peso(e.amount)}</div>
     </div>`;
   }
+  const catLabel = e.category === 'gas' ? 'Gas' : e.category === 'maintenance' ? 'Maintenance' : '';
+  const catPill = catLabel ? `<span class="category-pill ${e.category}">${catLabel}</span>` : '';
   return `<div class="entry-view">
     <div>
-      <div class="desc">${escapeHtml(e.desc || 'Expense')}</div>
+      <div class="desc">${escapeHtml(e.desc || 'Expense')}${catPill}</div>
       <div class="date">${e.date}</div>
       <div class="entry-actions">
         <button class="icon-btn" data-action="edit" data-kind="expense" data-id="${e.id}">Edit</button>
@@ -655,8 +699,16 @@ function entryEditFormHtml(e){
       <div class="field" style="margin-bottom:0;"><label>Date</label>
         <input type="date" id="edit-date-${e.id}" value="${e.date}"></div>
     </div>
-    <div class="field" style="margin-bottom:0;"><label>Amount (₱)</label>
-      <input type="number" id="edit-amount-${e.id}" value="${e.amount}" min="0" step="0.01"></div>
+    <div class="row">
+      <div class="field" style="margin-bottom:0;"><label>Amount (₱)</label>
+        <input type="number" id="edit-amount-${e.id}" value="${e.amount}" min="0" step="0.01"></div>
+      <div class="field" style="margin-bottom:0;"><label>Category</label>
+        <select id="edit-category-${e.id}">
+          <option value="general" ${e.category==='general'||!e.category ? 'selected':''}>General</option>
+          <option value="gas" ${e.category==='gas' ? 'selected':''}>Gas</option>
+          <option value="maintenance" ${e.category==='maintenance' ? 'selected':''}>Maintenance</option>
+        </select></div>
+    </div>
     <div class="edit-actions">
       <button class="action btn-primary btn-small" data-action="save" data-kind="expense" data-id="${e.id}">Save</button>
       <button class="action btn-secondary btn-small" data-action="cancel">Cancel</button>
@@ -683,20 +735,65 @@ function render(){
   balBar.classList.toggle('low', t.finalBalance < 0);
 
   document.getElementById('breakdownList').innerHTML = `
-    <div class="breakdown-row"><span>Net profit (salary − expenses)</span><span class="v">${peso(t.netProfit)}</span></div>
-    <div class="breakdown-row"><span>Offering — 10% of gross salary</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
+    <div class="breakdown-row"><span>Total salary</span><span class="v">${peso(t.totalIncome)}</span></div>
+    <div class="breakdown-row"><span>Less: Gas &amp; Maintenance</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
+    <div class="breakdown-row"><span>Offering base</span><span class="v">${peso(t.offeringBase)}</span></div>
+    <div class="breakdown-row"><span>Offering — 10% of offering base</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
+    <div class="breakdown-row"><span>Net profit (salary − all expenses)</span><span class="v">${peso(t.netProfit)}</span></div>
     <div class="breakdown-row"><span>Savings — 20% of net profit</span><span class="v" style="color:var(--savings)">${peso(t.savings)}</span></div>
     <div class="breakdown-row"><span>Final balance</span><span class="v">${peso(t.finalBalance)}</span></div>
   `;
 
-  const merged = mergedEntries();
-  const full = document.getElementById('ledgerList');
-  full.innerHTML = merged.length ? merged.map(entryHtml).join('') : '<div class="empty">No entries yet. Add a salary or expense to get started.</div>';
+  renderLedger();
 
+  const merged = mergedEntries();
   const preview = document.getElementById('ledgerPreview');
   const top5 = merged.slice(0,5);
   preview.innerHTML = top5.length ? top5.map(entryHtml).join('') : '<div class="empty">No entries yet. Add a salary or expense to get started.</div>';
 }
+
+function inRange(dateStr, period, refDate){
+  if(period === 'all') return true;
+  if(!dateStr) return false;
+  if(period === 'day') return dateStr === refDate;
+  if(period === 'month') return dateStr.slice(0,7) === refDate.slice(0,7);
+  if(period === 'week'){
+    const d = new Date(dateStr + 'T00:00:00');
+    const ref = new Date(refDate + 'T00:00:00');
+    const day = ref.getDay();
+    const diffToMon = (day === 0 ? -6 : 1 - day);
+    const monday = new Date(ref); monday.setDate(ref.getDate() + diffToMon);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    return d >= monday && d <= sunday;
+  }
+  return true;
+}
+
+function renderLedger(){
+  const period = document.getElementById('filterPeriod').value;
+  const refDate = document.getElementById('filterDate').value || todayStr();
+
+  const incomeFiltered = data.income.filter(e => inRange(e.date, period, refDate));
+  const expenseFiltered = data.expenses.filter(e => inRange(e.date, period, refDate));
+
+  document.getElementById('filterIncomeTotal').textContent = peso(incomeFiltered.reduce((s,e)=> s + e.amount, 0));
+  document.getElementById('filterExpenseTotal').textContent = peso(expenseFiltered.reduce((s,e)=> s + e.amount, 0));
+
+  const merged = [
+    ...incomeFiltered.map(e=>({...e, kind:'income'})),
+    ...expenseFiltered.map(e=>({...e, kind:'expense'}))
+  ].sort((a,b)=> (b.date || '').localeCompare(a.date || ''));
+
+  const full = document.getElementById('ledgerList');
+  full.innerHTML = merged.length ? merged.map(entryHtml).join('') : '<div class="empty">No entries in this period.</div>';
+}
+
+document.getElementById('filterPeriod').addEventListener('change', ()=>{
+  const period = document.getElementById('filterPeriod').value;
+  document.getElementById('filterDateWrap').style.display = period === 'all' ? 'none' : 'block';
+  renderLedger();
+});
+document.getElementById('filterDate').addEventListener('change', renderLedger);
 
 document.getElementById('addIncomeBtn').addEventListener('click', async ()=>{
   if(!currentUser) return;
@@ -718,13 +815,15 @@ document.getElementById('addExpenseBtn').addEventListener('click', async ()=>{
   const desc = document.getElementById('expDesc').value.trim();
   const dateVal = document.getElementById('expDate').value || todayStr();
   const amount = parseFloat(document.getElementById('expAmount').value);
+  const category = document.getElementById('expCategory').value;
   if(!amount || amount <= 0){ showToast('Enter an expense amount first.'); return; }
 
   await addDoc(collection(db, 'users', currentUser.uid, 'expenses'), {
-    desc: desc || 'Expense', date: dateVal, amount, createdAt: serverTimestamp()
+    desc: desc || 'Expense', date: dateVal, amount, category, createdAt: serverTimestamp()
   });
   document.getElementById('expDesc').value = '';
   document.getElementById('expAmount').value = '';
+  document.getElementById('expCategory').value = 'general';
   showToast('Expense entry added.');
 });
 
@@ -760,7 +859,8 @@ document.addEventListener('click', async (e)=>{
       await updateDoc(doc(db, 'users', currentUser.uid, 'income', id), { label: label || 'Salary', date: dateVal, amount });
     }else{
       const desc = document.getElementById(`edit-desc-${id}`).value.trim();
-      await updateDoc(doc(db, 'users', currentUser.uid, 'expenses', id), { desc: desc || 'Expense', date: dateVal, amount });
+      const category = document.getElementById(`edit-category-${id}`).value;
+      await updateDoc(doc(db, 'users', currentUser.uid, 'expenses', id), { desc: desc || 'Expense', date: dateVal, amount, category });
     }
     editing = null;
     showToast('Entry updated.');
@@ -821,7 +921,7 @@ async function loadAdminPanel(){
 
 document.getElementById('incDate').value = todayStr();
 document.getElementById('expDate').value = todayStr();
-</script>
+document.getElementById('filterDate').value = todayStr();
 </script>
 
 <script>
@@ -829,7 +929,5 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js'); });
 }
 </script>
-</body>
-</html>
 </body>
 </html>

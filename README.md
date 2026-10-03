@@ -5,15 +5,12 @@ per-user data — backed by Firebase (Authentication + Firestore).
 
 ## How the split works
 
-Offering and savings are each calculated directly from **net profit**
-(salary − expenses):
+Offering comes from **gross salary**; savings comes from **net profit**:
 
 1. **Net profit** = total salary − total expenses.
-2. **Offering — 10%** of net profit.
-3. **Savings — 20%** of net profit (independent of the offering).
+2. **Offering — 10%** of total (gross) salary.
+3. **Savings — 20%** of net profit. No savings are taken if net profit is zero or negative.
 4. **Final balance** = net profit − offering − savings.
-
-If net profit is zero or negative, no offering or savings are taken.
 
 ## How accounts work
 
