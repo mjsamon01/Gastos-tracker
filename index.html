@@ -531,7 +531,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e)=>{
   try{
     await signInWithEmailAndPassword(auth, email, password);
   }catch(err){
-    errEl.textContent = friendlyAuthError(err);
+    errEl.textContent = friendlyAuthError(err) + ' [' + err.code + ']';
   }
 });
 
@@ -549,7 +549,7 @@ document.getElementById('signupForm').addEventListener('submit', async (e)=>{
       createdAt: serverTimestamp()
     });
   }catch(err){
-    errEl.textContent = friendlyAuthError(err);
+    errEl.textContent = friendlyAuthError(err) + ' [' + err.code + ']';
   }
 });
 
