@@ -326,6 +326,8 @@
           <h2 class="sheet-title serif">How the split works</h2>
           <div class="sheet-sub">Offering is 10% of your salary <strong>after Gas &amp; Maintenance expenses are deducted</strong> (like a statutory deduction). Savings is 20% of your <strong>net profit</strong> (salary minus all expenses).</div>
           <div id="breakdownList"></div>
+          <div class="sheet-sub" id="clearOfferingNote" style="margin-top:12px; margin-bottom:8px;"></div>
+          <button class="action btn-secondary btn-small" id="clearOfferingBtn">Clear offering (start fresh from today)</button>
         </div>
 
         <div class="sheet">
@@ -450,16 +452,27 @@ import {
   deleteDoc, onSnapshot, query, orderBy, serverTimestamp, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* =======================================================================
+   1) PASTE YOUR OWN FIREBASE CONFIG HERE.
+      Get this from: Firebase console > Project settings > General >
+      "Your apps" > the </> web app icon.
+      This object is safe to publish publicly — it is not a secret.
+      Security is enforced by the Firestore rules you publish separately.
+   ======================================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyDbJnSVsUrmwNWndbNfartk2oOtqbGLx1k",
-  authDomain: "gastos-tracker-bf70d.firebaseapp.com",
-  projectId: "gastos-tracker-bf70d",
-  storageBucket: "gastos-tracker-bf70d.firebasestorage.app",
-  messagingSenderId: "415056811668",
-  appId: "1:415056811668:web:5331b1ead8d2991dc70681"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
-const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
+/* =======================================================================
+   2) List the email(s) that should see the Admin tab and be able to
+      approve/reject sign-ups. Must match exactly what they sign in with.
+   ======================================================================= */
+const ADMIN_EMAILS = ["youremail@example.com"];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -468,7 +481,8 @@ const db = getFirestore(app);
 let currentUser = null;
 let data = { income: [], expenses: [] };
 let editing = null; // { kind: 'income'|'expense', id }
-let unsubIncome = null, unsubExpenses = null;
+let unsubIncome = null, unsubExpenses = null, unsubUserDoc = null;
+let offeringClearedAt = null; // date string (YYYY-MM-DD) or null = never cleared
 
 function peso(n){
   const sign = n < 0 ? '-' : '';
@@ -518,7 +532,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e)=>{
   try{
     await signInWithEmailAndPassword(auth, email, password);
   }catch(err){
-    errEl.textContent = friendlyAuthError(err) + ' [' + err.code + ']';
+    errEl.textContent = friendlyAuthError(err);
   }
 });
 
@@ -536,7 +550,7 @@ document.getElementById('signupForm').addEventListener('submit', async (e)=>{
       createdAt: serverTimestamp()
     });
   }catch(err){
-    errEl.textContent = friendlyAuthError(err) + ' [' + err.code + ']';
+    errEl.textContent = friendlyAuthError(err);
   }
 });
 
@@ -559,6 +573,7 @@ onAuthStateChanged(auth, async (user)=>{
 
   if(unsubIncome){ unsubIncome(); unsubIncome = null; }
   if(unsubExpenses){ unsubExpenses(); unsubExpenses = null; }
+  if(unsubUserDoc){ unsubUserDoc(); unsubUserDoc = null; }
 
   if(!user){
     showScreen('auth');
@@ -578,6 +593,10 @@ onAuthStateChanged(auth, async (user)=>{
     document.getElementById('adminTabBtn').classList.toggle('hidden', !isAdmin(user));
     showScreen('app');
     attachDataListeners(user.uid);
+    unsubUserDoc = onSnapshot(doc(db, 'users', user.uid), (snap)=>{
+      offeringClearedAt = snap.exists() ? (snap.data().offeringClearedAt || null) : null;
+      render();
+    });
     if(isAdmin(user)) loadAdminPanel();
   } else if(statusVal === 'rejected'){
     showScreen('rejected');
@@ -615,17 +634,21 @@ function attachDataListeners(uid){
 function totals(){
   const totalIncome = data.income.reduce((s,e)=> s + e.amount, 0);
   const totalExpenses = data.expenses.reduce((s,e)=> s + e.amount, 0);
-  const preOfferingDeductions = data.expenses
-    .filter(e => e.category === 'gas' || e.category === 'maintenance')
-    .reduce((s,e)=> s + e.amount, 0);
   const netProfit = totalIncome - totalExpenses;
 
-  const offeringBase = totalIncome - preOfferingDeductions;
+  // Offering only counts entries dated after the last "Clear offering" checkpoint.
+  const afterClear = (e) => !offeringClearedAt || e.date > offeringClearedAt;
+  const offerIncome = data.income.filter(afterClear).reduce((s,e)=> s + e.amount, 0);
+  const preOfferingDeductions = data.expenses
+    .filter(e => (e.category === 'gas' || e.category === 'maintenance') && afterClear(e))
+    .reduce((s,e)=> s + e.amount, 0);
+
+  const offeringBase = offerIncome - preOfferingDeductions;
   const offering = offeringBase > 0 ? offeringBase * 0.10 : 0;
   const savings = netProfit > 0 ? netProfit * 0.20 : 0;
   const finalBalance = netProfit - offering - savings;
 
-  return { totalIncome, totalExpenses, preOfferingDeductions, netProfit, offeringBase, offering, savings, finalBalance };
+  return { totalIncome, totalExpenses, offerIncome, preOfferingDeductions, netProfit, offeringBase, offering, savings, finalBalance };
 }
 
 function mergedEntries(){
@@ -723,8 +746,9 @@ function render(){
   document.getElementById('balanceValue').textContent = peso(t.finalBalance);
   balBar.classList.toggle('low', t.finalBalance < 0);
 
+  const sinceLabel = offeringClearedAt ? ('since ' + offeringClearedAt) : 'all time';
   document.getElementById('breakdownList').innerHTML = `
-    <div class="breakdown-row"><span>Total salary</span><span class="v">${peso(t.totalIncome)}</span></div>
+    <div class="breakdown-row"><span>Salary counted (${sinceLabel})</span><span class="v">${peso(t.offerIncome)}</span></div>
     <div class="breakdown-row"><span>Less: Gas &amp; Maintenance</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
     <div class="breakdown-row"><span>Offering base</span><span class="v">${peso(t.offeringBase)}</span></div>
     <div class="breakdown-row"><span>Offering — 10% of offering base</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
@@ -732,6 +756,9 @@ function render(){
     <div class="breakdown-row"><span>Savings — 20% of net profit</span><span class="v" style="color:var(--savings)">${peso(t.savings)}</span></div>
     <div class="breakdown-row"><span>Final balance</span><span class="v">${peso(t.finalBalance)}</span></div>
   `;
+  document.getElementById('clearOfferingNote').textContent = offeringClearedAt
+    ? ('Offering has been counting since ' + offeringClearedAt + '. Entries before that are excluded.')
+    : 'Offering is counting your entire history so far.';
 
   renderLedger();
 
@@ -783,6 +810,13 @@ document.getElementById('filterPeriod').addEventListener('change', ()=>{
   renderLedger();
 });
 document.getElementById('filterDate').addEventListener('change', renderLedger);
+
+document.getElementById('clearOfferingBtn').addEventListener('click', async ()=>{
+  if(!currentUser) return;
+  if(!confirm('Mark today as the offering reset point? Past salary and Gas/Maintenance entries will no longer count toward the offering total — only new entries from here on will.')) return;
+  await updateDoc(doc(db, 'users', currentUser.uid), { offeringClearedAt: todayStr() });
+  showToast('Offering cleared. Counting fresh from today.');
+});
 
 document.getElementById('addIncomeBtn').addEventListener('click', async ()=>{
   if(!currentUser) return;

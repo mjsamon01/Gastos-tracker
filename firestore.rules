@@ -24,8 +24,14 @@ service cloud.firestore {
                     && request.auth.uid == userId
                     && request.resource.data.status == 'pending';
 
-      // Only the admin can change a profile (e.g. approve/reject/revoke).
-      allow update: if isAdmin();
+      // The admin can change anything on a profile (e.g. approve/reject/revoke).
+      // A user may update their own profile too, but only the offeringClearedAt
+      // field — status can never be changed by the user themselves.
+      allow update: if isAdmin()
+                    || (request.auth != null
+                        && request.auth.uid == userId
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offeringClearedAt'])
+                        && request.resource.data.status == resource.data.status);
       allow delete: if isAdmin();
 
       // A user's own salary entries — only once their account is approved.
