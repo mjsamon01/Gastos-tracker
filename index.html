@@ -460,19 +460,19 @@ import {
       Security is enforced by the Firestore rules you publish separately.
    ======================================================================= */
 const firebaseConfig = {
-   apiKey: "AIzaSyDbJnSVsUrmwNWndbNfartk2oOtqbGLx1k",
-  authDomain: "gastos-tracker-bf70d.firebaseapp.com",
-  projectId: "gastos-tracker-bf70d",
-  storageBucket: "gastos-tracker-bf70d.firebasestorage.app",
-  messagingSenderId: "415056811668",
-  appId: "1:415056811668:web:5331b1ead8d2991dc70681"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 /* =======================================================================
    2) List the email(s) that should see the Admin tab and be able to
       approve/reject sign-ups. Must match exactly what they sign in with.
    ======================================================================= */
-const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
+const ADMIN_EMAILS = ["youremail@example.com"];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -482,7 +482,7 @@ let currentUser = null;
 let data = { income: [], expenses: [] };
 let editing = null; // { kind: 'income'|'expense', id }
 let unsubIncome = null, unsubExpenses = null, unsubUserDoc = null;
-let offeringClearedAt = null; // date string (YYYY-MM-DD) or null = never cleared
+let offeringClearedAt = null; // ISO timestamp string (with time) or null = never cleared
 
 function peso(n){
   const sign = n < 0 ? '-' : '';
@@ -637,7 +637,12 @@ function totals(){
   const netProfit = totalIncome - totalExpenses;
 
   // Offering only counts entries dated after the last "Clear offering" checkpoint.
-  const afterClear = (e) => !offeringClearedAt || e.date > offeringClearedAt;
+  const clearedAtMs = offeringClearedAt ? Date.parse(offeringClearedAt) : null;
+  const afterClear = (e) => {
+    if(!clearedAtMs) return true;
+    if(!e.createdAt || typeof e.createdAt.toMillis !== 'function') return true; // not yet synced; assume new
+    return e.createdAt.toMillis() >= clearedAtMs;
+  };
   const offerIncome = data.income.filter(afterClear).reduce((s,e)=> s + e.amount, 0);
   const preOfferingDeductions = data.expenses
     .filter(e => (e.category === 'gas' || e.category === 'maintenance') && afterClear(e))
@@ -746,7 +751,7 @@ function render(){
   document.getElementById('balanceValue').textContent = peso(t.finalBalance);
   balBar.classList.toggle('low', t.finalBalance < 0);
 
-  const sinceLabel = offeringClearedAt ? ('since ' + offeringClearedAt) : 'all time';
+  const sinceLabel = offeringClearedAt ? ('since ' + new Date(offeringClearedAt).toLocaleString('en-PH')) : 'all time';
   document.getElementById('breakdownList').innerHTML = `
     <div class="breakdown-row"><span>Salary counted (${sinceLabel})</span><span class="v">${peso(t.offerIncome)}</span></div>
     <div class="breakdown-row"><span>Less: Gas &amp; Maintenance</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
@@ -757,7 +762,7 @@ function render(){
     <div class="breakdown-row"><span>Final balance</span><span class="v">${peso(t.finalBalance)}</span></div>
   `;
   document.getElementById('clearOfferingNote').textContent = offeringClearedAt
-    ? ('Offering has been counting since ' + offeringClearedAt + '. Entries before that are excluded.')
+    ? ('Offering has been counting since ' + new Date(offeringClearedAt).toLocaleString('en-PH') + '. Entries added before that are excluded.')
     : 'Offering is counting your entire history so far.';
 
   renderLedger();
@@ -814,8 +819,13 @@ document.getElementById('filterDate').addEventListener('change', renderLedger);
 document.getElementById('clearOfferingBtn').addEventListener('click', async ()=>{
   if(!currentUser) return;
   if(!confirm('Mark today as the offering reset point? Past salary and Gas/Maintenance entries will no longer count toward the offering total — only new entries from here on will.')) return;
-  await updateDoc(doc(db, 'users', currentUser.uid), { offeringClearedAt: todayStr() });
-  showToast('Offering cleared. Counting fresh from today.');
+  try{
+    await updateDoc(doc(db, 'users', currentUser.uid), { offeringClearedAt: new Date().toISOString() });
+    showToast('Offering cleared. Counting fresh from today.');
+  }catch(err){
+    console.error('Clear offering failed', err);
+    showToast('Could not clear offering: ' + (err.code || err.message || 'unknown error'));
+  }
 });
 
 document.getElementById('addIncomeBtn').addEventListener('click', async ()=>{
