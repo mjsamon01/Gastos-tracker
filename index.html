@@ -330,12 +330,13 @@
             <div class="field" style="margin-bottom:0;">
               <label for="offerPeriod">Offering period</label>
               <select id="offerPeriod">
+                <option value="all">All time</option>
                 <option value="week">This week</option>
                 <option value="month">This month</option>
                 <option value="day">This day</option>
               </select>
             </div>
-            <div class="field" style="margin-bottom:0;">
+            <div class="field" id="offerDateWrap" style="margin-bottom:0; display:none;">
               <label for="offerDate">Reference date</label>
               <input type="date" id="offerDate">
             </div>
@@ -474,19 +475,19 @@ import {
       Security is enforced by the Firestore rules you publish separately.
    ======================================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyDbJnSVsUrmwNWndbNfartk2oOtqbGLx1k",
-  authDomain: "gastos-tracker-bf70d.firebaseapp.com",
-  projectId: "gastos-tracker-bf70d",
-  storageBucket: "gastos-tracker-bf70d.firebasestorage.app",
-  messagingSenderId: "415056811668",
-  appId: "1:415056811668:web:5331b1ead8d2991dc70681"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 /* =======================================================================
    2) List the email(s) that should see the Admin tab and be able to
       approve/reject sign-ups. Must match exactly what they sign in with.
    ======================================================================= */
-const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
+const ADMIN_EMAILS = ["youremail@example.com"];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -759,7 +760,7 @@ function render(){
   document.getElementById('balanceValue').textContent = peso(t.finalBalance);
   balBar.classList.toggle('low', t.finalBalance < 0);
 
-  const periodLabel = t.offerPeriod === 'day' ? 'this day' : t.offerPeriod === 'month' ? 'this month' : 'this week';
+  const periodLabel = t.offerPeriod === 'all' ? 'all time' : t.offerPeriod === 'day' ? 'this day' : t.offerPeriod === 'month' ? 'this month' : 'this week';
   document.getElementById('breakdownList').innerHTML = `
     <div class="breakdown-row"><span>Salary (${periodLabel})</span><span class="v">${peso(t.offerIncome)}</span></div>
     <div class="breakdown-row"><span>Less: Gas &amp; Maintenance (${periodLabel})</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
@@ -821,7 +822,11 @@ document.getElementById('filterPeriod').addEventListener('change', ()=>{
 });
 document.getElementById('filterDate').addEventListener('change', renderLedger);
 
-document.getElementById('offerPeriod').addEventListener('change', render);
+document.getElementById('offerPeriod').addEventListener('change', ()=>{
+  const period = document.getElementById('offerPeriod').value;
+  document.getElementById('offerDateWrap').style.display = period === 'all' ? 'none' : 'block';
+  render();
+});
 document.getElementById('offerDate').addEventListener('change', render);
 
 document.getElementById('addIncomeBtn').addEventListener('click', async ()=>{
