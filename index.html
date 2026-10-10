@@ -324,10 +324,24 @@
 
         <div class="sheet">
           <h2 class="sheet-title serif">How the split works</h2>
-          <div class="sheet-sub">Offering is 10% of your salary <strong>after Gas &amp; Maintenance expenses are deducted</strong> (like a statutory deduction). Savings is 20% of your <strong>net profit</strong> (salary minus all expenses).</div>
+          <div class="sheet-sub">Offering is 10% of the salary you pick below, <strong>after Gas &amp; Maintenance expenses from that same period are deducted</strong> — like a statutory deduction. Savings is 20% of your <strong>net profit</strong> (salary minus all expenses, all time).</div>
+
+          <div class="row" style="align-items:flex-end; margin-bottom:14px;">
+            <div class="field" style="margin-bottom:0;">
+              <label for="offerPeriod">Offering period</label>
+              <select id="offerPeriod">
+                <option value="week">This week</option>
+                <option value="month">This month</option>
+                <option value="day">This day</option>
+              </select>
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="offerDate">Reference date</label>
+              <input type="date" id="offerDate">
+            </div>
+          </div>
+
           <div id="breakdownList"></div>
-          <div class="sheet-sub" id="clearOfferingNote" style="margin-top:12px; margin-bottom:8px;"></div>
-          <button class="action btn-secondary btn-small" id="clearOfferingBtn">Clear offering (start fresh from today)</button>
         </div>
 
         <div class="sheet">
@@ -460,19 +474,19 @@ import {
       Security is enforced by the Firestore rules you publish separately.
    ======================================================================= */
 const firebaseConfig = {
-apiKey: "AIzaSyDbJnSVsUrmwNWndbNfartk2oOtqbGLx1k",
-  authDomain: "gastos-tracker-bf70d.firebaseapp.com",
-  projectId: "gastos-tracker-bf70d",
-  storageBucket: "gastos-tracker-bf70d.firebasestorage.app",
-  messagingSenderId: "415056811668",
-  appId: "1:415056811668:web:5331b1ead8d2991dc70681"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 /* =======================================================================
    2) List the email(s) that should see the Admin tab and be able to
       approve/reject sign-ups. Must match exactly what they sign in with.
    ======================================================================= */
-const ADMIN_EMAILS = ["mjsamon01@gmail.com"];
+const ADMIN_EMAILS = ["youremail@example.com"];
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -481,8 +495,7 @@ const db = getFirestore(app);
 let currentUser = null;
 let data = { income: [], expenses: [] };
 let editing = null; // { kind: 'income'|'expense', id }
-let unsubIncome = null, unsubExpenses = null, unsubUserDoc = null;
-let offeringClearedAt = null; // ISO timestamp string (with time) or null = never cleared
+let unsubIncome = null, unsubExpenses = null;
 
 function peso(n){
   const sign = n < 0 ? '-' : '';
@@ -573,7 +586,6 @@ onAuthStateChanged(auth, async (user)=>{
 
   if(unsubIncome){ unsubIncome(); unsubIncome = null; }
   if(unsubExpenses){ unsubExpenses(); unsubExpenses = null; }
-  if(unsubUserDoc){ unsubUserDoc(); unsubUserDoc = null; }
 
   if(!user){
     showScreen('auth');
@@ -593,10 +605,6 @@ onAuthStateChanged(auth, async (user)=>{
     document.getElementById('adminTabBtn').classList.toggle('hidden', !isAdmin(user));
     showScreen('app');
     attachDataListeners(user.uid);
-    unsubUserDoc = onSnapshot(doc(db, 'users', user.uid), (snap)=>{
-      offeringClearedAt = snap.exists() ? (snap.data().offeringClearedAt || null) : null;
-      render();
-    });
     if(isAdmin(user)) loadAdminPanel();
   } else if(statusVal === 'rejected'){
     showScreen('rejected');
@@ -636,16 +644,16 @@ function totals(){
   const totalExpenses = data.expenses.reduce((s,e)=> s + e.amount, 0);
   const netProfit = totalIncome - totalExpenses;
 
-  // Offering only counts entries dated after the last "Clear offering" checkpoint.
-  const clearedAtMs = offeringClearedAt ? Date.parse(offeringClearedAt) : null;
-  const afterClear = (e) => {
-    if(!clearedAtMs) return true;
-    if(!e.createdAt || typeof e.createdAt.toMillis !== 'function') return true; // not yet synced; assume new
-    return e.createdAt.toMillis() >= clearedAtMs;
-  };
-  const offerIncome = data.income.filter(afterClear).reduce((s,e)=> s + e.amount, 0);
+  // Offering is based only on the salary (and Gas/Maintenance) dated within
+  // the selected period — this week, this month, or a single day.
+  const offerPeriod = document.getElementById('offerPeriod')?.value || 'week';
+  const offerRefDate = document.getElementById('offerDate')?.value || todayStr();
+
+  const offerIncome = data.income
+    .filter(e => inRange(e.date, offerPeriod, offerRefDate))
+    .reduce((s,e)=> s + e.amount, 0);
   const preOfferingDeductions = data.expenses
-    .filter(e => (e.category === 'gas' || e.category === 'maintenance') && afterClear(e))
+    .filter(e => (e.category === 'gas' || e.category === 'maintenance') && inRange(e.date, offerPeriod, offerRefDate))
     .reduce((s,e)=> s + e.amount, 0);
 
   const offeringBase = offerIncome - preOfferingDeductions;
@@ -653,7 +661,7 @@ function totals(){
   const savings = netProfit > 0 ? netProfit * 0.20 : 0;
   const finalBalance = netProfit - offering - savings;
 
-  return { totalIncome, totalExpenses, offerIncome, preOfferingDeductions, netProfit, offeringBase, offering, savings, finalBalance };
+  return { totalIncome, totalExpenses, offerIncome, preOfferingDeductions, netProfit, offeringBase, offering, savings, finalBalance, offerPeriod, offerRefDate };
 }
 
 function mergedEntries(){
@@ -751,19 +759,16 @@ function render(){
   document.getElementById('balanceValue').textContent = peso(t.finalBalance);
   balBar.classList.toggle('low', t.finalBalance < 0);
 
-  const sinceLabel = offeringClearedAt ? ('since ' + new Date(offeringClearedAt).toLocaleString('en-PH')) : 'all time';
+  const periodLabel = t.offerPeriod === 'day' ? 'this day' : t.offerPeriod === 'month' ? 'this month' : 'this week';
   document.getElementById('breakdownList').innerHTML = `
-    <div class="breakdown-row"><span>Salary counted (${sinceLabel})</span><span class="v">${peso(t.offerIncome)}</span></div>
-    <div class="breakdown-row"><span>Less: Gas &amp; Maintenance</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
+    <div class="breakdown-row"><span>Salary (${periodLabel})</span><span class="v">${peso(t.offerIncome)}</span></div>
+    <div class="breakdown-row"><span>Less: Gas &amp; Maintenance (${periodLabel})</span><span class="v">-${peso(t.preOfferingDeductions)}</span></div>
     <div class="breakdown-row"><span>Offering base</span><span class="v">${peso(t.offeringBase)}</span></div>
     <div class="breakdown-row"><span>Offering — 10% of offering base</span><span class="v" style="color:var(--offering)">${peso(t.offering)}</span></div>
-    <div class="breakdown-row"><span>Net profit (salary − all expenses)</span><span class="v">${peso(t.netProfit)}</span></div>
+    <div class="breakdown-row"><span>Net profit (salary − all expenses, all time)</span><span class="v">${peso(t.netProfit)}</span></div>
     <div class="breakdown-row"><span>Savings — 20% of net profit</span><span class="v" style="color:var(--savings)">${peso(t.savings)}</span></div>
     <div class="breakdown-row"><span>Final balance</span><span class="v">${peso(t.finalBalance)}</span></div>
   `;
-  document.getElementById('clearOfferingNote').textContent = offeringClearedAt
-    ? ('Offering has been counting since ' + new Date(offeringClearedAt).toLocaleString('en-PH') + '. Entries added before that are excluded.')
-    : 'Offering is counting your entire history so far.';
 
   renderLedger();
 
@@ -816,17 +821,8 @@ document.getElementById('filterPeriod').addEventListener('change', ()=>{
 });
 document.getElementById('filterDate').addEventListener('change', renderLedger);
 
-document.getElementById('clearOfferingBtn').addEventListener('click', async ()=>{
-  if(!currentUser) return;
-  if(!confirm('Mark today as the offering reset point? Past salary and Gas/Maintenance entries will no longer count toward the offering total — only new entries from here on will.')) return;
-  try{
-    await updateDoc(doc(db, 'users', currentUser.uid), { offeringClearedAt: new Date().toISOString() });
-    showToast('Offering cleared. Counting fresh from today.');
-  }catch(err){
-    console.error('Clear offering failed', err);
-    showToast('Could not clear offering: ' + (err.code || err.message || 'unknown error'));
-  }
-});
+document.getElementById('offerPeriod').addEventListener('change', render);
+document.getElementById('offerDate').addEventListener('change', render);
 
 document.getElementById('addIncomeBtn').addEventListener('click', async ()=>{
   if(!currentUser) return;
@@ -955,6 +951,7 @@ async function loadAdminPanel(){
 document.getElementById('incDate').value = todayStr();
 document.getElementById('expDate').value = todayStr();
 document.getElementById('filterDate').value = todayStr();
+document.getElementById('offerDate').value = todayStr();
 </script>
 
 <script>
